@@ -1,0 +1,63 @@
+export const sampleClasses = [
+  {
+    id: "class-10-a",
+    name: "Grade 10 - Section A",
+    subject: "Mathematics",
+    color: "indigo",
+    students: [
+      { rollNo: 1, name: "Aarav Sharma", gender: "Male" },
+      { rollNo: 2, name: "Aditi Rao", gender: "Female" },
+      { rollNo: 3, name: "Aditya Verma", gender: "Male" },
+      { rollNo: 4, name: "Ananya Patel", gender: "Female" },
+      { rollNo: 5, name: "Aryan Singh", gender: "Male" },
+      { rollNo: 6, name: "Bhavna Joshi", gender: "Female" },
+      { rollNo: 7, name: "Chirag Mehta", gender: "Male" },
+      { rollNo: 8, name: "Deepak Kumar", gender: "Male" },
+      { rollNo: 9, name: "Diya Nair", gender: "Female" },
+      { rollNo: 10, name: "Eshan Gupta", gender: "Male" },
+      { rollNo: 11, name: "Gauri Deshmukh", gender: "Female" },
+      { rollNo: 12, name: "Harsh Vardhan", gender: "Male" },
+      { rollNo: 13, name: "Ishaan Reddy", gender: "Male" },
+      { rollNo: 14, name: "Kavya Iyer", gender: "Female" },
+      { rollNo: 15, name: "Manish Agarwal", gender: "Male" },
+      { rollNo: 16, name: "Neha Choudhary", gender: "Female" },
+      { rollNo: 17, name: "Pooja Hegde", gender: "Female" },
+      { rollNo: 18, name: "Pranav Mishra", gender: "Male" },
+      { rollNo: 19, name: "Rahul Kapoor", gender: "Male" },
+      { rollNo: 20, name: "Riya Sen", gender: "Female" },
+      { rollNo: 21, name: "Rohan Das", gender: "Male" },
+      { rollNo: 22, name: "Sakshi Saxena", gender: "Female" },
+      { rollNo: 23, name: "Siddharth Jain", gender: "Male" },
+      { rollNo: 24, name: "Sneha Pillai", gender: "Female" },
+      { rollNo: 25, name: "Tanvi Kulkarni", gender: "Female" },
+      { rollNo: 26, name: "Utkarsh Srivastava", gender: "Male" },
+      { rollNo: 27, name: "Varun Malhotra", gender: "Male" },
+      { rollNo: 28, name: "Vidya Balan", gender: "Female" },
+      { rollNo: 29, name: "Yash Chopra", gender: "Male" },
+      { rollNo: 30, name: "Zoya Akhtar", gender: "Female" }
+    ]
+  },
+  {
+    id: "btech-cse-3",
+    name: "B.Tech CSE - 3rd Year",
+    subject: "Operating Systems",
+    color: "blue",
+    students: [
+      { rollNo: 1, name: "Aman Verma", gender: "Male" },
+      { rollNo: 2, name: "Anjali Gupta", gender: "Female" },
+      { rollNo: 3, name: "Bharat Joshi", gender: "Male" },
+      { rollNo: 4, name: "Chhavi Singhal", gender: "Female" },
+      { rollNo: 5, name: "Dhruv Saxena", gender: "Male" },
+      { rollNo: 6, name: "Divya Mehra", gender: "Female" },
+      { rollNo: 7, name: "Farhan Ali", gender: "Male" },
+      { rollNo: 8, name: "Geetika Roy", gender: "Female" },
+      { rollNo: 9, name: "Himanshu Rawat", gender: "Male" },
+      { rollNo: 10, name: "Isha Malhotra", gender: "Female" },
+      { rollNo: 11, name: "Jayant Sen", gender: "Male" },
+      { rollNo: 12, name: "Kritika Soni", gender: "Female" },
+      { rollNo: 13, name: "Mohit Pandey", gender: "Male" },
+      { rollNo: 14, name: "Nandini Rathi", gender: "Female" },
+      { rollNo: 15, name: "Piyush Bansal", gender: "Male" }
+    ]
+  }
+];

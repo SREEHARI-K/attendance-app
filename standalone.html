@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RollCall Pro - Class Attendance Tracker</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📋</text></svg>">
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            present: { 500: '#10b981', 600: '#059669', 700: '#047857' },
+            absent: { 500: '#f43f5e', 600: '#e11d48', 700: '#be123c' }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- React 18 & ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen selection:bg-indigo-500 selection:text-white">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // --- Audio Feedback Synthesizer ---
+    let audioCtx = null;
+    function getAudioContext() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (AudioContext) audioCtx = new AudioContext();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    }
+
+    function playPresentSound() {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.13);
+      } catch (e) {}
+    }
+
+    function playAbsentSound() {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(330, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.14, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.13);
+      } catch (e) {}
+    }
+
+    function playCompletionSound() {
+      try {
+        const ctx = getAudioContext();
+        if (!ctx) return;
+        [523.25, 659.25, 783.99, 1046.50].forEach((freq, idx) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const startTime = ctx.currentTime + idx * 0.09;
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, startTime);
+          gain.gain.setValueAtTime(0.15, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.25);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(startTime);
+          osc.stop(startTime + 0.26);
+        });
+      } catch (e) {}
+    }
+
+    // --- Sample Data with Genders ---
+    const defaultClasses = [
+      {
+        id: "class-10-a",
+        name: "Grade 10 - Section A",
+        subject: "Mathematics",
+        students: [
+          { rollNo: 1, name: "Aarav Sharma", gender: "Male" },
+          { rollNo: 2, name: "Aditi Rao", gender: "Female" },
+          { rollNo: 3, name: "Aditya Verma", gender: "Male" },
+          { rollNo: 4, name: "Ananya Patel", gender: "Female" },
+          { rollNo: 5, name: "Aryan Singh", gender: "Male" },
+          { rollNo: 6, name: "Bhavna Joshi", gender: "Female" },
+          { rollNo: 7, name: "Chirag Mehta", gender: "Male" },
+          { rollNo: 8, name: "Deepak Kumar", gender: "Male" },
+          { rollNo: 9, name: "Diya Nair", gender: "Female" },
+          { rollNo: 10, name: "Eshan Gupta", gender: "Male" },
+          { rollNo: 11, name: "Gauri Deshmukh", gender: "Female" },
+          { rollNo: 12, name: "Harsh Vardhan", gender: "Male" },
+          { rollNo: 13, name: "Ishaan Reddy", gender: "Male" },
+          { rollNo: 14, name: "Kavya Iyer", gender: "Female" },
+          { rollNo: 15, name: "Manish Agarwal", gender: "Male" },
+          { rollNo: 16, name: "Neha Choudhary", gender: "Female" },
+          { rollNo: 17, name: "Pooja Hegde", gender: "Female" },
+          { rollNo: 18, name: "Pranav Mishra", gender: "Male" },
+          { rollNo: 19, name: "Rahul Kapoor", gender: "Male" },
+          { rollNo: 20, name: "Riya Sen", gender: "Female" }
+        ]
+      },
+      {
+        id: "btech-cse-3",
+        name: "B.Tech CSE - 3rd Year",
+        subject: "Operating Systems",
+        students: [
+          { rollNo: 1, name: "Aman Verma", gender: "Male" },
+          { rollNo: 2, name: "Anjali Gupta", gender: "Female" },
+          { rollNo: 3, name: "Bharat Joshi", gender: "Male" },
+          { rollNo: 4, name: "Chhavi Singhal", gender: "Female" },
+          { rollNo: 5, name: "Dhruv Saxena", gender: "Male" },
+          { rollNo: 6, name: "Divya Mehra", gender: "Female" },
+          { rollNo: 7, name: "Farhan Ali", gender: "Male" },
+          { rollNo: 8, name: "Geetika Roy", gender: "Female" }
+        ]
+      }
+    ];
+
+    const STORAGE_KEY = 'rollcall_classes_v1';
+    const PREFIX = 'rollcall_records_';
+
+    function getClasses() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultClasses));
+        return defaultClasses;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) && parsed.length > 0 ? parsed : defaultClasses;
+      } catch (e) {
+        return defaultClasses;
+      }
+    }
+
+    function saveClasses(classes) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(classes));
+    }
+
+    function getClassRecords(classId) {
+      const raw = localStorage.getItem(PREFIX + classId);
+      return raw ? JSON.parse(raw) : {};
+    }
+
+    function saveClassSession(classId, session) {
+      const records = getClassRecords(classId);
+      records[session.date] = { ...session, updatedAt: Date.now() };
+      localStorage.setItem(PREFIX + classId, JSON.stringify(records));
+    }
+
+    function exportToCSV(selectedClass, dateString, session) {
+      const headers = ["Roll Number", "Student Name", "Gender", "Date", "Status"];
+      const rows = selectedClass.students.map(student => {
+        const status = session.records[student.rollNo] || "unmarked";
+        return [student.rollNo, `"${(student.name || '').replace(/"/g, '""')}"`, student.gender || 'Male', dateString, status.toUpperCase()];
+      });
+      const summaryRows = [
+        [],
+        ["Summary", "", "", ""],
+        ["Total Students", session.summary.total, "", ""],
+        ["Present", session.summary.present, "", ""],
+        ["Absent", session.summary.absent, "", ""],
+        ["Attendance Rate", `${session.summary.percentage}%`, "", ""]
+      ];
+      const csv = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map(e => e.join(",")), ...summaryRows.map(e => e.join(","))].join("\n");
+      const link = document.createElement("a");
+      link.setAttribute("href", encodeURI(csv));
+      link.setAttribute("download", `Attendance_${selectedClass.name.replace(/\s+/g, '_')}_${dateString}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // --- Main App Component ---
+    function App() {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const [classes, setClasses] = useState(getClasses);
+      const [selectedClass, setSelectedClass] = useState(null);
+      const [selectedDate, setSelectedDate] = useState(todayStr);
+      const [currentView, setCurrentView] = useState('select-class');
+      const [currentRecords, setCurrentRecords] = useState({});
+      const [soundEnabled, setSoundEnabled] = useState(true);
+      const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+      const [editingClass, setEditingClass] = useState(null);
+      const [toastMessage, setToastMessage] = useState(null);
+
+      const showToast = (msg) => {
+        setToastMessage(msg);
+        setTimeout(() => setToastMessage(null), 3000);
+      };
+
+      const handleSelectClassToTake = (cls) => {
+        setSelectedClass(cls);
+        const recordsMap = getClassRecords(cls.id);
+        const existing = recordsMap[selectedDate];
+        setCurrentRecords(existing && existing.records ? existing.records : {});
+        setCurrentView('take-attendance');
+      };
+
+      const handleFinishAttendance = (records) => {
+        setCurrentRecords(records);
+        if (selectedClass) {
+          const students = selectedClass.students || [];
+          const presentCount = Object.values(records).filter(v => v === 'present').length;
+          const absentCount = Object.values(records).filter(v => v === 'absent').length;
+          const total = students.length;
+          const percentage = total > 0 ? Math.round((presentCount / total) * 100) : 0;
+          const session = {
+            date: selectedDate,
+            records,
+            summary: { total, present: presentCount, absent: absentCount, percentage }
+          };
+          saveClassSession(selectedClass.id, session);
+          showToast("Attendance logged to Local Storage!");
+        }
+        setCurrentView('summary');
+      };
+
+      const handleSaveAndExit = () => {
+        if (selectedClass) {
+          const students = selectedClass.students || [];
+          const presentCount = Object.values(currentRecords).filter(v => v === 'present').length;
+          const absentCount = Object.values(currentRecords).filter(v => v === 'absent').length;
+          const total = students.length;
+          const percentage = total > 0 ? Math.round((presentCount / total) * 100) : 0;
+          const session = {
+            date: selectedDate,
+            records: currentRecords,
+            summary: { total, present: presentCount, absent: absentCount, percentage }
+          };
+          saveClassSession(selectedClass.id, session);
+          showToast("Saved successfully!");
+        }
+        setCurrentView('select-class');
+      };
+
+      const handleSaveClass = (classData) => {
+        const index = classes.findIndex(c => c.id === classData.id);
+        let updated;
+        if (index >= 0) {
+          updated = [...classes];
+          updated[index] = classData;
+        } else {
+          updated = [...classes, classData];
+        }
+        setClasses(updated);
+        saveClasses(updated);
+        if (selectedClass && selectedClass.id === classData.id) setSelectedClass(classData);
+        setIsAddModalOpen(false);
+        setEditingClass(null);
+        showToast(`Saved class "${classData.name}"!`);
+      };
+
+      const handleDeleteClass = (id) => {
+        const filtered = classes.filter(c => c.id !== id);
+        setClasses(filtered);
+        saveClasses(filtered);
+        localStorage.removeItem(PREFIX + id);
+        showToast("Class deleted");
+      };
+
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
+          {toastMessage && (
+            <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold flex items-center gap-2">
+              <span>✨</span>
+              <span>{toastMessage}</span>
+            </div>
+          )}
+
+          <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-sm">
+            <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+              <div className="flex items-center space-x-3">
+                {currentView !== 'select-class' && (
+                  <button
+                    onClick={() => setCurrentView('select-class')}
+                    className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors flex items-center gap-1 text-sm font-semibold"
+                  >
+                    ← <span className="hidden sm:inline">Classes</span>
+                  </button>
+                )}
+                <div className="flex items-center space-x-2">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-600 flex items-center justify-center text-white shadow-sm font-bold text-base">
+                    📋
+                  </div>
+                  <div>
+                    <h1 className="text-base sm:text-lg font-bold text-slate-900 leading-tight flex items-center gap-2">
+                      RollCall Pro
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200">
+                        Gender-Analytics
+                      </span>
+                    </h1>
+                    <p className="text-xs text-slate-500">
+                      {selectedClass ? `${selectedClass.name} • ${selectedDate}` : 'One-Tap Fast Attendance'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {currentView === 'select-class' && (
+                  <button
+                    onClick={() => { setEditingClass(null); setIsAddModalOpen(true); }}
+                    className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all"
+                  >
+                    + New Class
+                  </button>
+                )}
+                <button
+                  onClick={() => setSoundEnabled(!soundEnabled)}
+                  className={`p-2 rounded-lg border text-xs font-bold transition-colors ${
+                    soundEnabled ? 'bg-slate-100 text-indigo-600 border-slate-300' : 'bg-white text-slate-400 border-slate-200'
+                  }`}
+                >
+                  {soundEnabled ? '🔊 Sound ON' : '🔇 Muted'}
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="flex-1 pb-16">
+            {currentView === 'select-class' && (
+              <ClassSelectorView
+                classes={classes}
+                selectedDate={selectedDate}
+                onDateChange={setSelectedDate}
+                onSelectToTake={handleSelectClassToTake}
+                onSelectToView={(cls, session) => {
+                  setSelectedClass(cls);
+                  setCurrentRecords(session ? session.records : {});
+                  setCurrentView('summary');
+                }}
+                onOpenAdd={() => { setEditingClass(null); setIsAddModalOpen(true); }}
+                onEditClass={(cls) => { setEditingClass(cls); setIsAddModalOpen(true); }}
+                onDeleteClass={handleDeleteClass}
+              />
+            )}
+
+            {currentView === 'take-attendance' && selectedClass && (
+              <AttendanceTakerView
+                selectedClass={selectedClass}
+                selectedDate={selectedDate}
+                initialRecords={currentRecords}
+                onFinishAttendance={handleFinishAttendance}
+                soundEnabled={soundEnabled}
+              />
+            )}
+
+            {currentView === 'summary' && selectedClass && (
+              <AttendanceSummaryView
+                selectedClass={selectedClass}
+                selectedDate={selectedDate}
+                records={currentRecords}
+                onUpdateRecords={setCurrentRecords}
+                onSaveAndExit={handleSaveAndExit}
+                onResumeTaking={() => setCurrentView('take-attendance')}
+                onRetake={() => {
+                  setCurrentRecords({});
+                  setCurrentView('take-attendance');
+                }}
+              />
+            )}
+          </main>
+
+          {isAddModalOpen && (
+            <AddClassModalView
+              editingClass={editingClass}
+              onClose={() => { setIsAddModalOpen(false); setEditingClass(null); }}
+              onSaveClass={handleSaveClass}
+            />
+          )}
+
+          <footer className="text-center text-xs text-slate-400 py-4 border-t border-slate-200">
+            RollCall Attendance App • Gender Wise Analytics • Stored in Browser LocalStorage
+          </footer>
+        </div>
+      );
+    }
+
+    // --- Sub-View: Class Selector ---
+    function ClassSelectorView({ classes, selectedDate, onDateChange, onSelectToTake, onSelectToView, onOpenAdd, onEditClass, onDeleteClass }) {
+      const [search, setSearch] = useState('');
+      const filtered = classes.filter(c => c.name.toLowerCase().includes(search.toLowerCase()));
+
+      return (
+        <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 tracking-tight">Select a Class 🎓</h2>
+              <p className="text-slate-500 text-sm mt-1">Pick a class below to take attendance roll by roll.</p>
+            </div>
+            <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
+              <span className="text-xs font-bold text-slate-500 uppercase">Date:</span>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => onDateChange(e.target.value)}
+                className="bg-transparent text-sm font-semibold text-slate-800 focus:outline-none cursor-pointer"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <h3 className="text-lg font-bold text-slate-800">Your Classes ({classes.length})</h3>
+            <input
+              type="text"
+              placeholder="Search class..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full sm:w-64 px-3.5 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {filtered.map(cls => {
+              const records = getClassRecords(cls.id);
+              const dateRecord = records[selectedDate];
+              const studentCount = cls.students ? cls.students.length : 0;
+              const boys = (cls.students || []).filter(s => (s.gender || 'Male').toLowerCase() === 'male').length;
+              const girls = (cls.students || []).filter(s => (s.gender || '').toLowerCase() === 'female').length;
+
+              return (
+                <div key={cls.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden">
+                  <div className="p-5 space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-lg">{cls.name}</h4>
+                        {cls.subject && <span className="text-xs text-slate-500">{cls.subject}</span>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => onEditClass(cls)}
+                          className="text-slate-400 hover:text-indigo-600 transition-colors p-1"
+                          title="Edit Class and Student Names"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete class "${cls.name}"?`)) onDeleteClass(cls.id);
+                          }}
+                          className="text-slate-300 hover:text-red-500 transition-colors p-1"
+                          title="Delete"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 space-y-1">
+                      <div className="flex items-center justify-between text-xs text-slate-700 font-semibold">
+                        <span>{studentCount} Students</span>
+                        <span className="font-mono text-slate-400">Roll #{cls.students?.[0]?.rollNo || 1}–#{cls.students?.[studentCount - 1]?.rollNo || studentCount}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-[11px] font-semibold pt-1 border-t border-slate-200">
+                        <span className="text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">👦 {boys} Boys</span>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-pink-700 bg-pink-50 px-1.5 py-0.5 rounded">👧 {girls} Girls</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      {dateRecord ? (
+                        <div className="flex items-center justify-between text-xs bg-emerald-50 text-emerald-800 p-2.5 rounded-xl border border-emerald-200">
+                          <span className="font-bold">✓ Completed</span>
+                          <span className="font-bold">{dateRecord.summary?.present}/{studentCount} ({dateRecord.summary?.percentage}%)</span>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200 font-semibold">
+                          ⏳ Not taken yet for {selectedDate}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                    <button
+                      onClick={() => onEditClass(cls)}
+                      className="text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    >
+                      ✏️ Edit Roster
+                    </button>
+                    {dateRecord ? (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => onSelectToView(cls, dateRecord)}
+                          className="px-3 py-1.5 text-xs font-semibold bg-white border border-slate-300 rounded-lg hover:bg-slate-50"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={() => onSelectToTake(cls)}
+                          className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
+                        >
+                          Retake
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => onSelectToTake(cls)}
+                        className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm"
+                      >
+                        ▶ Start Attendance
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            <button
+              onClick={onOpenAdd}
+              className="border-2 border-dashed border-slate-300 hover:border-indigo-400 bg-white hover:bg-indigo-50/30 rounded-2xl p-8 flex flex-col items-center justify-center text-center gap-2 min-h-[200px]"
+            >
+              <div className="w-12 h-12 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-xl font-bold">
+                +
+              </div>
+              <span className="font-bold text-slate-800 text-base">Add New Class</span>
+              <span className="text-xs text-slate-500">Specify student names & gender</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Sub-View: One-by-One Attendance Taker with Gender & Name ---
+    function AttendanceTakerView({ selectedClass, selectedDate, initialRecords, onFinishAttendance, soundEnabled }) {
+      const students = selectedClass.students || [];
+      const totalStudents = students.length;
+
+      const [currentIndex, setCurrentIndex] = useState(() => {
+        for (let i = 0; i < totalStudents; i++) {
+          if (!initialRecords[students[i].rollNo]) return i;
+        }
+        return 0;
+      });
+
+      const [records, setRecords] = useState({ ...initialRecords });
+      const currentStudent = students[currentIndex] || { rollNo: currentIndex + 1 };
+      const currentStatus = records[currentStudent.rollNo];
+      const isM = (currentStudent.gender || 'Male').toLowerCase() === 'male';
+
+      const presentCount = Object.values(records).filter(s => s === 'present').length;
+      const absentCount = Object.values(records).filter(s => s === 'absent').length;
+      const markedCount = presentCount + absentCount;
+      const progressPercent = totalStudents > 0 ? Math.round((markedCount / totalStudents) * 100) : 0;
+
+      const boys = students.filter(s => (s.gender || 'Male').toLowerCase() === 'male');
+      const girls = students.filter(s => (s.gender || '').toLowerCase() === 'female');
+      const presentBoys = boys.filter(s => records[s.rollNo] === 'present').length;
+      const presentGirls = girls.filter(s => records[s.rollNo] === 'present').length;
+
+      const handleMark = useCallback((status) => {
+        if (!currentStudent) return;
+        if (soundEnabled) {
+          if (status === 'present') playPresentSound();
+          else playAbsentSound();
+        }
+
+        const updated = { ...records, [currentStudent.rollNo]: status };
+        setRecords(updated);
+
+        if (currentIndex >= totalStudents - 1) {
+          if (soundEnabled) playCompletionSound();
+          onFinishAttendance(updated);
+        } else {
+          setCurrentIndex(prev => prev + 1);
+        }
+      }, [currentStudent, records, currentIndex, totalStudents, soundEnabled, onFinishAttendance]);
+
+      const handlePrevious = useCallback(() => {
+        if (currentIndex > 0) setCurrentIndex(prev => prev - 1);
+      }, [currentIndex]);
+
+      const handleNext = useCallback(() => {
+        if (currentIndex < totalStudents - 1) setCurrentIndex(prev => prev + 1);
+      }, [currentIndex, totalStudents]);
+
+      useEffect(() => {
+        const onKey = (e) => {
+          if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+          if (e.key === 'p' || e.key === 'P' || e.key === 'ArrowRight' || e.key === 'Enter') {
+            e.preventDefault();
+            handleMark('present');
+          } else if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            handleMark('absent');
+          } else if (e.key === 'Backspace' || e.key === 'b' || e.key === 'B' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            handlePrevious();
+          } else if (e.key === ' ' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            handleNext();
+          }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [handleMark, handlePrevious, handleNext]);
+
+      return (
+        <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold uppercase text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                  {selectedClass.name}
+                </span>
+                <span className="text-xs text-slate-400 mx-2">•</span>
+                <span className="text-xs font-medium text-slate-500">{selectedDate}</span>
+                <h2 className="text-xl font-bold text-slate-800 mt-1">Taking Roll Call</h2>
+              </div>
+              <button
+                onClick={() => onFinishAttendance(records)}
+                className="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg"
+              >
+                ✓ Review & Finish
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <div className="flex justify-between items-center text-xs font-semibold text-slate-600">
+                <span>Progress: {markedCount}/{totalStudents} ({progressPercent}%)</span>
+                <div className="flex gap-3">
+                  <span className="text-emerald-600 font-bold">🟢 {presentCount} Present</span>
+                  <span className="text-rose-600 font-bold">🔴 {absentCount} Absent</span>
+                </div>
+              </div>
+              <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden border border-slate-200">
+                <div className="bg-indigo-600 h-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-slate-500 font-medium pt-1">
+                <span className="text-blue-700 bg-blue-50 px-2 py-0.5 rounded font-semibold">👦 Boys: {presentBoys}/{boys.length}</span>
+                <span className="text-pink-700 bg-pink-50 px-2 py-0.5 rounded font-semibold">👧 Girls: {presentGirls}/{girls.length}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-3xl p-8 sm:p-12 shadow-md border-2 border-slate-200 text-center relative overflow-hidden">
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Student {currentIndex + 1} of {totalStudents}
+            </div>
+
+            <div className="space-y-2 mb-6">
+              <span className="text-xs uppercase tracking-widest font-extrabold text-slate-400 block">Roll Number</span>
+              <div className="text-6xl sm:text-7xl font-black text-slate-900 font-mono">
+                {currentStudent.rollNo}
+              </div>
+
+              {/* Student Name & Gender Tag */}
+              <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+                <span className="text-xl sm:text-2xl font-bold text-slate-800">
+                  {currentStudent.name || `Student ${currentStudent.rollNo}`}
+                </span>
+                <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                  isM ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-pink-50 text-pink-700 border-pink-200'
+                }`}>
+                  {isM ? '👦 Boy' : '👧 Girl'}
+                </span>
+              </div>
+            </div>
+
+            <div className="h-8 flex items-center justify-center">
+              {currentStatus ? (
+                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                  currentStatus === 'present' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                }`}>
+                  {currentStatus === 'present' ? '✓ Currently Marked Present' : '✕ Currently Marked Absent'}
+                </span>
+              ) : (
+                <span className="text-xs text-slate-400 italic">Awaiting response...</span>
+              )}
+            </div>
+
+            {/* PRESENT & ABSENT BUTTONS */}
+            <div className="grid grid-cols-2 gap-4 sm:gap-6 mt-8">
+              <button
+                onClick={() => handleMark('absent')}
+                className="p-6 sm:p-8 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-2xl shadow-lg shadow-rose-600/30 transition-all flex flex-col items-center justify-center"
+              >
+                <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-3xl font-black mb-2">
+                  ✕
+                </div>
+                <span className="text-xl font-black tracking-wide">ABSENT</span>
+                <span className="text-[11px] text-rose-200 mt-1 uppercase font-semibold">Press [A] or [←]</span>
+              </button>
+
+              <button
+                onClick={() => handleMark('present')}
+                className="p-6 sm:p-8 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white rounded-2xl shadow-lg shadow-emerald-600/30 transition-all flex flex-col items-center justify-center"
+              >
+                <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center text-3xl font-black mb-2">
+                  ✓
+                </div>
+                <span className="text-xl font-black tracking-wide">PRESENT</span>
+                <span className="text-[11px] text-emerald-200 mt-1 uppercase font-semibold">Press [P] or [→]</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between mt-8 pt-6 border-t border-slate-100 text-xs text-slate-500">
+              <button
+                onClick={handlePrevious}
+                disabled={currentIndex === 0}
+                className={`font-semibold px-3 py-1.5 rounded-lg ${currentIndex === 0 ? 'opacity-30' : 'hover:bg-slate-100'}`}
+              >
+                ← Previous
+              </button>
+
+              <select
+                value={currentIndex}
+                onChange={(e) => setCurrentIndex(Number(e.target.value))}
+                className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-700 text-xs font-semibold"
+              >
+                {students.map((std, idx) => (
+                  <option key={std.rollNo} value={idx}>
+                    Roll #{std.rollNo} {std.name ? `(${std.name})` : ''} {records[std.rollNo] ? `[${records[std.rollNo] === 'present' ? 'P' : 'A'}]` : ''}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={handleNext}
+                disabled={currentIndex === totalStudents - 1}
+                className={`font-semibold px-3 py-1.5 rounded-lg ${currentIndex === totalStudents - 1 ? 'opacity-30' : 'hover:bg-slate-100'}`}
+              >
+                Skip / Next →
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-slate-100 rounded-xl p-3 text-xs text-slate-600 flex justify-center gap-4 text-center">
+            <span>⌨️ Keyboard: <b>[P]</b> or <b>[→]</b> for Present | <b>[A]</b> or <b>[←]</b> for Absent | <b>[Backspace]</b> for Previous</span>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Sub-View: Summary & Gender Breakdown ---
+    function AttendanceSummaryView({ selectedClass, selectedDate, records, onUpdateRecords, onSaveAndExit, onRetake, onResumeTaking }) {
+      const [copied, setCopied] = useState(false);
+      const students = selectedClass.students || [];
+      const presentStudents = students.filter(s => records[s.rollNo] === 'present');
+      const absentStudents = students.filter(s => records[s.rollNo] === 'absent');
+      const total = students.length;
+      const presentCount = presentStudents.length;
+      const absentCount = absentStudents.length;
+      const percentage = total > 0 ? Math.round((presentCount / total) * 100) : 0;
+
+      // Gender stats
+      const boys = students.filter(s => (s.gender || 'Male').toLowerCase() === 'male');
+      const girls = students.filter(s => (s.gender || '').toLowerCase() === 'female');
+      const boysPresent = boys.filter(s => records[s.rollNo] === 'present');
+      const girlsPresent = girls.filter(s => records[s.rollNo] === 'present');
+      const boysPct = boys.length > 0 ? Math.round((boysPresent.length / boys.length) * 100) : 0;
+      const girlsPct = girls.length > 0 ? Math.round((girlsPresent.length / girls.length) * 100) : 0;
+
+      const toggleStatus = (rollNo) => {
+        onUpdateRecords({
+          ...records,
+          [rollNo]: records[rollNo] === 'present' ? 'absent' : 'present'
+        });
+      };
+
+      const copyNotice = () => {
+        const absentList = absentStudents.length > 0 
+          ? absentStudents.map(s => {
+              const isM = (s.gender || 'Male').toLowerCase() === 'male';
+              return `#${s.rollNo} ${s.name || `Student ${s.rollNo}`} (${isM ? 'Boy' : 'Girl'})`;
+            }).join('\n   • ')
+          : 'None (100% Attendance!)';
+
+        const text = `📋 *ATTENDANCE REPORT*\n` +
+          `🏫 *Class:* ${selectedClass.name}\n` +
+          `📅 *Date:* ${selectedDate}\n` +
+          `👥 *Total:* ${total} (${boys.length} Boys, ${girls.length} Girls)\n` +
+          `✅ *Present:* ${presentCount}/${total} (${percentage}%)\n\n` +
+          `📊 *GENDER-WISE DATA:*\n` +
+          `   • 👦 *Boys:* ${boysPresent.length}/${boys.length} Present (${boysPct}%)\n` +
+          `   • 👧 *Girls:* ${girlsPresent.length}/${girls.length} Present (${girlsPct}%)\n\n` +
+          `❌ *Absentees (${absentCount}):*\n` +
+          (absentStudents.length > 0 ? `   • ${absentList}\n` : `   ${absentList}\n`);
+
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2500);
+      };
+
+      return (
+        <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-bold uppercase text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                {selectedClass.name}
+              </span>
+              <span className="text-xs text-slate-400 mx-2">•</span>
+              <span className="text-xs font-medium text-slate-500">{selectedDate}</span>
+              <h2 className="text-2xl font-black text-slate-900 mt-1">Attendance Complete 🎉</h2>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={onResumeTaking} className="px-3 py-2 text-xs font-bold bg-slate-100 hover:bg-slate-200 rounded-xl">
+                Resume Roll Call
+              </button>
+              <button onClick={() => exportToCSV(selectedClass, selectedDate, { date: selectedDate, records, summary: { total, present: presentCount, absent: absentCount, percentage } })} className="px-3 py-2 text-xs font-bold bg-white border border-slate-300 hover:bg-slate-50 rounded-xl">
+                📥 Export CSV
+              </button>
+              <button onClick={onSaveAndExit} className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm">
+                💾 Save & Exit
+              </button>
+            </div>
+          </div>
+
+          {/* Top Level Counts */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-slate-200">
+              <div className="text-xs font-bold text-slate-400 uppercase">Total Students</div>
+              <div className="text-2xl font-black text-slate-800 mt-1">{total}</div>
+            </div>
+            <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-200">
+              <div className="text-xs font-bold text-emerald-700 uppercase">Present</div>
+              <div className="text-2xl font-black text-emerald-800 mt-1">{presentCount}</div>
+              <div className="text-xs font-semibold text-emerald-600">{percentage}% Attendance</div>
+            </div>
+            <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200">
+              <div className="text-xs font-bold text-rose-700 uppercase">Absent</div>
+              <div className="text-2xl font-black text-rose-800 mt-1">{absentCount}</div>
+              <div className="text-xs font-semibold text-rose-600">{100 - percentage}% Absent</div>
+            </div>
+          </div>
+
+          {/* GENDER-WISE CARDS */}
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-4">
+            <h3 className="font-extrabold text-slate-900 text-base">📊 Gender-wise Attendance Data</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              
+              {/* Boys Card */}
+              <div className="bg-blue-50/70 p-5 rounded-2xl border border-blue-200 space-y-3">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">👦</span>
+                    <div>
+                      <h4 className="font-bold text-slate-900">Boys (Male)</h4>
+                      <span className="text-xs text-slate-500">{boys.length} Enrolled</span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-blue-100 text-blue-800 px-2.5 py-1 rounded-full border border-blue-200">
+                    {boysPct}% Present
+                  </span>
+                </div>
+                <div className="w-full bg-blue-200/60 h-2.5 rounded-full overflow-hidden">
+                  <div className="bg-blue-600 h-full transition-all" style={{ width: `${boysPct}%` }} />
+                </div>
+                <div className="flex justify-between text-xs text-slate-600 pt-1">
+                  <span>Present: <b>{boysPresent.length}</b></span>
+                  <span>Absent: <b className="text-rose-600">{boys.length - boysPresent.length}</b></span>
+                </div>
+              </div>
+
+              {/* Girls Card */}
+              <div className="bg-pink-50/70 p-5 rounded-2xl border border-pink-200 space-y-3">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">👧</span>
+                    <div>
+                      <h4 className="font-bold text-slate-900">Girls (Female)</h4>
+                      <span className="text-xs text-slate-500">{girls.length} Enrolled</span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-pink-100 text-pink-800 px-2.5 py-1 rounded-full border border-pink-200">
+                    {girlsPct}% Present
+                  </span>
+                </div>
+                <div className="w-full bg-pink-200/60 h-2.5 rounded-full overflow-hidden">
+                  <div className="bg-pink-600 h-full transition-all" style={{ width: `${girlsPct}%` }} />
+                </div>
+                <div className="flex justify-between text-xs text-slate-600 pt-1">
+                  <span>Present: <b>{girlsPresent.length}</b></span>
+                  <span>Absent: <b className="text-rose-600">{girls.length - girlsPresent.length}</b></span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          {/* Absentees Notice with Gender Tags */}
+          <div className="bg-gradient-to-r from-rose-50 to-orange-50 border border-rose-200 rounded-2xl p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">🔴 Absent Students ({absentCount})</h3>
+                <p className="text-xs text-slate-600 mt-1">Ready to share with student names and gender tags.</p>
+              </div>
+              <button
+                onClick={copyNotice}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold ${
+                  copied ? 'bg-emerald-600 text-white' : 'bg-white text-slate-800 border border-slate-300 hover:bg-slate-50'
+                }`}
+              >
+                {copied ? '✓ Copied to Clipboard!' : '📋 Copy Notice with Gender'}
+              </button>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {absentStudents.length > 0 ? (
+                absentStudents.map(s => {
+                  const isM = (s.gender || 'Male').toLowerCase() === 'male';
+                  return (
+                    <span key={s.rollNo} className="px-3 py-1 bg-white border border-rose-300 rounded-lg text-xs font-bold text-rose-700 flex items-center gap-1.5">
+                      <span className="font-mono text-slate-400">#{s.rollNo}</span>
+                      <span>{s.name || `Student ${s.rollNo}`}</span>
+                      <span className={`text-[10px] px-1 rounded ${isM ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+                        {isM ? 'Boy' : 'Girl'}
+                      </span>
+                    </span>
+                  );
+                })
+              ) : (
+                <span className="text-xs font-bold text-emerald-700">🌟 100% Attendance! No students absent.</span>
+              )}
+            </div>
+          </div>
+
+          {/* Full Grid Roster */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-bold text-slate-900 text-base">Class Roster (Tap to Flip Status)</h3>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+              {students.map(s => {
+                const isPresent = records[s.rollNo] === 'present';
+                const isM = (s.gender || 'Male').toLowerCase() === 'male';
+                return (
+                  <button
+                    key={s.rollNo}
+                    onClick={() => toggleStatus(s.rollNo)}
+                    className={`p-3 rounded-xl border text-left flex flex-col justify-between hover:scale-[1.02] transition-all ${
+                      isPresent ? 'bg-emerald-50 border-emerald-300' : 'bg-rose-50 border-rose-300'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center w-full">
+                      <span className="font-mono font-bold text-sm">#{s.rollNo}</span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded text-white ${isPresent ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+                        {isPresent ? 'P' : 'A'}
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-slate-800 mt-2 truncate">
+                      {s.name || `Student ${s.rollNo}`}
+                    </div>
+                    <span className={`text-[10px] mt-1 inline-block px-1 rounded w-fit ${isM ? 'bg-blue-100 text-blue-800' : 'bg-pink-100 text-pink-800'}`}>
+                      {isM ? '👦 Boy' : '👧 Girl'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center">
+            <button onClick={onRetake} className="text-xs font-semibold text-slate-600 hover:text-slate-900">
+              🔄 Retake from start
+            </button>
+            <button onClick={onSaveAndExit} className="px-6 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md">
+              💾 Save & Done
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // --- Sub-View: Add / Edit Class Modal with Names & Gender Selection ---
+    function AddClassModalView({ onClose, onSaveClass, editingClass }) {
+      const [className, setClassName] = useState(editingClass ? editingClass.name : '');
+      const [subject, setSubject] = useState(editingClass ? (editingClass.subject || '') : '');
+      const [students, setStudents] = useState(() => {
+        if (editingClass && editingClass.students) {
+          return JSON.parse(JSON.stringify(editingClass.students));
+        }
+        return [
+          { rollNo: 1, name: '', gender: 'Male' },
+          { rollNo: 2, name: '', gender: 'Female' },
+          { rollNo: 3, name: '', gender: 'Male' },
+          { rollNo: 4, name: '', gender: 'Female' },
+          { rollNo: 5, name: '', gender: 'Male' }
+        ];
+      });
+
+      const handleAddRow = () => {
+        const nextRoll = students.length > 0 ? Math.max(...students.map(s => Number(s.rollNo) || 0)) + 1 : 1;
+        setStudents([...students, { rollNo: nextRoll, name: '', gender: 'Male' }]);
+      };
+
+      const handleUpdate = (idx, field, val) => {
+        const updated = [...students];
+        updated[idx][field] = val;
+        setStudents(updated);
+      };
+
+      const handleRemove = (idx) => {
+        setStudents(students.filter((_, i) => i !== idx));
+      };
+
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!className.trim()) return alert("Enter class name");
+
+        const valid = students.map((s, idx) => ({
+          rollNo: Number(s.rollNo) || (idx + 1),
+          name: s.name.trim() || `Student ${s.rollNo || idx + 1}`,
+          gender: s.gender || 'Male'
+        }));
+
+        if (valid.length === 0) return alert("Add at least one student");
+
+        onSaveClass({
+          id: editingClass ? editingClass.id : `class-${Date.now()}`,
+          name: className.trim(),
+          subject: subject.trim(),
+          students: valid
+        });
+      };
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-4 my-8 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center border-b pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-lg">
+                  {editingClass ? 'Edit Class & Student Roster' : 'Add Class & Students'}
+                </h3>
+                <p className="text-xs text-slate-500">Add student names and choose gender (Boy / Girl)</p>
+              </div>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-lg">✕</button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1 pr-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Class Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Class 10 - Section A"
+                    value={className}
+                    onChange={(e) => setClassName(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border rounded-xl font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Subject (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Science"
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value)}
+                    className="w-full px-3 py-2 text-sm bg-slate-50 border rounded-xl"
+                  />
+                </div>
+              </div>
+
+              {/* Student Rows */}
+              <div className="space-y-2 pt-2">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-700 bg-slate-50 p-2.5 rounded-xl border">
+                  <span>Student Names & Genders ({students.length})</span>
+                  <button
+                    type="button"
+                    onClick={handleAddRow}
+                    className="px-2.5 py-1 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold"
+                  >
+                    + Add Student
+                  </button>
+                </div>
+
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {students.map((s, idx) => (
+                    <div key={idx} className="flex items-center gap-2 p-1.5 bg-white border rounded-xl">
+                      <span className="text-xs font-mono font-bold text-slate-400 pl-2">#{s.rollNo}</span>
+                      <input
+                        type="text"
+                        placeholder="Student Name..."
+                        value={s.name}
+                        onChange={(e) => handleUpdate(idx, 'name', e.target.value)}
+                        className="flex-1 px-2.5 py-1 text-xs font-semibold bg-slate-50 border rounded-lg"
+                      />
+                      <div className="flex bg-slate-100 p-0.5 rounded-lg border text-xs">
+                        <button
+                          type="button"
+                          onClick={() => handleUpdate(idx, 'gender', 'Male')}
+                          className={`px-2 py-0.5 rounded font-bold ${s.gender === 'Male' ? 'bg-blue-600 text-white' : 'text-slate-600'}`}
+                        >
+                          👦 Boy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleUpdate(idx, 'gender', 'Female')}
+                          className={`px-2 py-0.5 rounded font-bold ${s.gender === 'Female' ? 'bg-pink-600 text-white' : 'text-slate-600'}`}
+                        >
+                          👧 Girl
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(idx)}
+                        className="text-slate-300 hover:text-red-500 px-1 text-sm"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={handleAddRow}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                >
+                  + Add Another Row
+                </button>
+                <div className="flex gap-2">
+                  <button type="button" onClick={onClose} className="px-4 py-2 text-xs font-bold text-slate-600">Cancel</button>
+                  <button type="submit" className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 rounded-xl hover:bg-indigo-700">
+                    {editingClass ? 'Update Class' : 'Save Class'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
